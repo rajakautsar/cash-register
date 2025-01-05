@@ -19,7 +19,6 @@ func NewRegister(db *sql.DB) *Register {
 
 func (r *Register) AddItem(item models.Item) {
     r.items[item.ID] = item
-    r.items[item.Name]=item
 }
 
 func (r *Register) RemoveItem(itemID string) {
@@ -37,5 +36,11 @@ func (r *Register) CalculateTotal() float64 {
 func (r *Register) SaveItemToDB(item models.Item) error {
     query := "INSERT INTO items (id, name, price) VALUES (?, ?, ?)"
     _, err := r.db.Exec(query, item.ID, item.Name, item.Price)
+    return err
+}
+
+func (r *Register) SaveUserToDB(user models.User) error {
+    query := "INSERT INTO users (id, username, password, role) VALUES (?, ?, ?, ?)"
+    _, err := r.db.Exec(query, user.ID, user.Username, user.Password, user.Role)
     return err
 }
