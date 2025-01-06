@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 )
 
@@ -62,6 +63,8 @@ func main() {
 	http.HandleFunc("/add-item", authMiddleware(addItemHandler, "admin"))
 	http.HandleFunc("/remove-item", authMiddleware(removeItemHandler, "admin"))
 	http.HandleFunc("/calculate-total", authMiddleware(calculateTotalHandler, "employee"))
+	http.HandleFunc("/sales-report", authMiddleware(salesReportHandler, "admin"))
+	http.HandleFunc("/add-sale", authMiddleware(addSaleHandler, "admin"))
 
 	// Print the server port
 	fmt.Printf("Server is running at http://localhost:%s\n", port)
@@ -95,7 +98,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	expirationTime := time.Now().Add(5 * time.Minute)
+	expirationTime := time.Now().Add(100 * time.Minute)
 	claims := &Claims{
 		Username: user.Username,
 		Role:     user.Role,
@@ -117,7 +120,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		Expires: expirationTime,
 	})
 
-	response := map[string]string{"message": "Login successful"}
+	response := map[string]string{"message": "Login successful", "token": tokenString}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
@@ -254,6 +257,74 @@ func calculateTotalHandler(w http.ResponseWriter, r *http.Request) {
 
 	total := reg.CalculateTotal()
 	response := map[string]float64{"total": total}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func salesReportHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	period := r.URL.Query().Get("period")
+	if period == "" {
+		http.Error(w, "Missing period parameter", http.StatusBadRequest)
+		return
+	}
+
+	var startDate, endDate time.Time
+	now := time.Now()
+
+	switch period {
+	case "daily":
+		startDate = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		endDate = startDate.AddDate(0, 0, 1)
+	case "monthly":
+		startDate = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+		endDate = startDate.AddDate(0, 1, 0)
+	case "yearly":
+		startDate = time.Date(now.Year(), 1, 1, 0, 0, 0, 0, now.Location())
+		endDate = startDate.AddDate(1, 0, 0)
+	default:
+		http.Error(w, "Invalid period", http.StatusBadRequest)
+		return
+	}
+
+	sales, err := reg.GetSalesByDate(startDate, endDate)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sales)
+}
+
+func addSaleHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var sales []models.Sale
+	err := json.NewDecoder(r.Body).Decode(&sales)
+	if err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	for _, sale := range sales {
+		sale.ID = uuid.New().String()
+		sale.Date = time.Now()
+		err := reg.AddSale(sale)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	response := map[string]string{"message": "Sales added successfully"}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
